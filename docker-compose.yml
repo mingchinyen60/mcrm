@@ -1,0 +1,70 @@
+version: '3.8'
+
+services:
+  # -------------------------------------------------------------
+  # 1. PostgreSQL Relational Database Service
+  # -------------------------------------------------------------
+  postgres:
+    image: postgres:16-alpine
+    container_name: crm_postgres
+    restart: always
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-crm_db}
+      POSTGRES_USER: ${POSTGRES_USER:-crm_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-crm_secure_vault_2026}
+    volumes:
+      # Persistent storage on Synology NAS mapped to /docker/crm/postgres_data for Synology Hyper Backup
+      - ${DATA_PATH:-./data/postgres}:/var/lib/postgresql/data
+    ports:
+      # Use ${POSTGRES_PORT:-5432} to avoid conflicting with Synology internal PostgreSQL
+      - "${POSTGRES_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-crm_user} -d ${POSTGRES_DB:-crm_db}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - crm_net
+
+  # -------------------------------------------------------------
+  # 2. FastAPI Backend Application Service
+  # -------------------------------------------------------------
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: crm_backend
+    restart: always
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-crm_user}:${POSTGRES_PASSWORD:-crm_secure_vault_2026}@postgres:5432/${POSTGRES_DB:-crm_db}
+      PROJECT_NAME: "High-Precision Synology CRM"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./attachments:/app/attachments
+    ports:
+      - "8000:8000"
+    networks:
+      - crm_net
+
+  # -------------------------------------------------------------
+  # 3. React Frontend + Nginx Web Server & Reverse Proxy
+  # -------------------------------------------------------------
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: crm_frontend
+    restart: always
+    depends_on:
+      - backend
+    ports:
+      # Access CRM UI at http://192.168.1.224:3000
+      - "3000:80"
+    networks:
+      - crm_net
+
+networks:
+  crm_net:
+    driver: bridge

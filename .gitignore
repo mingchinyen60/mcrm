@@ -1,0 +1,29 @@
+# Virtual Environments
+.venv/
+env/
+venv/
+ENV/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Node / Frontend
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Environment variables & secrets
+.env
+attachments/
+*.zip
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
