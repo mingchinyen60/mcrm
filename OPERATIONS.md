@@ -28,11 +28,13 @@
 |                                                                           |  (PostgreSQL 16)   |   |
 |                                                                           +--------------------+   |
 |                                                                                     |              |
-|                                                                           Persistent Mount Volume  |
+|                                                                           Persistent Mount Volumes |
 |                                                                                     v              |
 |   +--------------------------------------------------------------------------------------------+   |
-|   |       Synology Shared Folder: /volume1/docker/crm/postgres_data                            |   |
-|   |       (Protected by Synology Hyper Backup & Btrfs Snapshots)                               |   |
+|   |  Synology Shared Folders:                                                                  |   |
+|   |  - /volume1/docker/crm/postgres_data  (PostgreSQL relational database)                     |   |
+|   |  - /volume1/docker/crm/attachments    (Activity PDF meeting minutes & lab test reports)    |   |
+|   |  (Protected by Synology Hyper Backup & Btrfs Snapshots)                                    |   |
 |   +--------------------------------------------------------------------------------------------+   |
 +----------------------------------------------------------------------------------------------------+
 ```
@@ -44,13 +46,17 @@
 1. **Synology DSM Version:** DSM 7.2 or later.
 2. **Container Manager:** Installed via DSM Package Center (replaces legacy Docker package).
 3. **Storage Setup:**
-   - Create directories in File Station:
-     ```
+   - Create the required directories in File Station:
+     ```bash
      /volume1/docker/crm/
      /volume1/docker/crm/postgres_data/
      /volume1/docker/crm/attachments/
      ```
-   - Ensure the `docker` user or administrators have read/write access to this directory. Attachments uploaded to activities (meeting PDFs, test reports) are stored in `/volume1/docker/crm/attachments/`.
+   - Ensure the `docker` user or administrators have read/write access to these directories.
+   - Attachments uploaded to activities (meeting PDFs, test reports) are stored in `/volume1/docker/crm/attachments/`.
+4. **Port Allocation Notice:**
+   - Synology DSM internally listens on port `5432` for system PostgreSQL.
+   - Precision CRM maps PostgreSQL to host port `5433` (`POSTGRES_PORT=5433` in `.env`) to guarantee zero conflict.
 
 ---
 
@@ -83,7 +89,7 @@
 
 ---
 
-### Method B: Via Synology SSH Terminal
+### Method B: Via Synology SSH Terminal & Interactive Scripts
 
 1. Enable SSH in DSM: **Control Panel ➔ Terminal & SNMP ➔ Enable SSH service** (Port 22).
 2. Connect to the NAS:
@@ -106,6 +112,19 @@
    ```bash
    sudo docker compose logs -f
    ```
+
+### Method C: Automated Remote Deployment Script (`deploy_update.py`)
+For remote deployments from Windows/macOS, use the updated `deploy_update.py` script. The script securely prompts for NAS credentials without storing them:
+```bash
+python deploy_update.py
+```
+Prompts:
+```plaintext
+Enter Synology NAS Host [192.168.1.224]: 192.168.1.224
+Enter Synology NAS Username: mcatg
+Enter Synology NAS Password: ********
+```
+The script automatically connects via SSH, unpacks the update package via `7z`, rebuilds containers via `docker-compose`, and reports live container health.
 
 ---
 
@@ -135,13 +154,16 @@ To access your CRM securely via a clean domain name (e.g. `https://crm.yourdomai
 
 ## 5. Backup & Disaster Recovery (Synology Hyper Backup)
 
-Because database data is stored in the persistent volume `/volume1/docker/crm/postgres_data`:
+Because database data and uploaded files are stored in dedicated persistent volumes:
 
 ### Automated Daily Backup with Hyper Backup
 1. Open **Hyper Backup** in DSM.
 2. Click **+ ➔ Data backup task**.
 3. Target: Choose your destination (Synology C2 Storage, external USB drive, or remote rsync/NAS).
-4. Folders: Select `/volume1/docker/crm/postgres_data` and `/volume1/docker/crm/docker-compose.yml`.
+4. Folders: Select:
+   - `/volume1/docker/crm/postgres_data` (relational database)
+   - `/volume1/docker/crm/attachments` (uploaded PDF meeting minutes, test reports)
+   - `/volume1/docker/crm/docker-compose.yml` (orchestration definition)
 5. Schedule: Set to run daily (e.g., at 03:00 AM).
 6. Enable integrity check and client-side encryption as desired.
 
@@ -159,27 +181,16 @@ cat backup_file.sql | docker exec -i crm_postgres psql -U crm_user -d crm_db
 
 ---
 
-## 6. Maintenance & Updates
+## 6. Automated Health Verification
 
-### Updating Application Code
-1. Pull new changes or update code in `/volume1/docker/crm`.
-2. Rebuild and restart containers:
-   ```bash
-   docker compose down
-   docker compose up -d --build
-   ```
-3. Database data is fully preserved in the persistent volume during rebuilds.
-
-### Health Check Endpoint
-The backend includes a health monitoring endpoint:
+The repository includes a fast automated integration test suite ([test_live_nas.py](backend/tests/test_live_nas.py)) that validates all endpoints in under 2 seconds:
 ```bash
-curl http://192.168.1.224:8000/api/health
+pytest -v backend/tests/test_live_nas.py
 ```
-Expected output:
-```json
-{
-  "status": "healthy",
-  "service": "High-Precision Synology CRM",
-  "database": "postgresql"
-}
-```
+Checks:
+- Backend health & PostgreSQL 16 connectivity
+- Nginx reverse proxy routing
+- Frontend SPA serving
+- Parallel project and distributor channel partner linkages
+- Interaction history and PDF attachment uploads/downloads
+- Excel export generation and batch import templates
